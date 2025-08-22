@@ -1,13 +1,8 @@
 # app.py
-# Streamlit version of the Trainer Booking app with a polished UI/UX.
-# - Date cell itself is clickable (no separate Select button)
-# - Compact month nav (chevrons + label) flush to top-right
-# - Slot picker opens as a dialog after date selection (experimental_dialog)
-# - Trainer view opens as a dialog from a top-right button (PIN-gated)
-# - Light/Dark design tokens + consistent spacing
-# - Custom thin availability bar
-# - Privacy-friendly dots in calendar to indicate bookings (no names shown)
-# - Toast confirmations for key actions (move/cancel/block/settings)
+# Trainer Booking — v0.1.2-alpha
+# - Replaced deprecated st.experimental_dialog → st.dialog
+# - Replaced st.experimental_rerun → st.rerun
+# - Keeps all prior UI/UX polish (hover, focus-visible, privacy dots, thin bar)
 
 import json
 import os
@@ -51,8 +46,8 @@ def to_date_str(dt: date) -> str:
 def from_date_str(s: str) -> date:
     return datetime.strptime(s, '%Y-%m-%d').date()
 
-def slot_iso(d: date, hour: int) -> str:
-    return datetime(d.year, d.month, d.day, hour, 0, 0).isoformat()
+def slot_iso(d: date, hr: int) -> str:
+    return datetime(d.year, d.month, d.day, hr, 0, 0).isoformat()
 
 def add_minutes_iso(iso: str, minutes: int) -> str:
     dt = datetime.fromisoformat(iso)
@@ -60,9 +55,6 @@ def add_minutes_iso(iso: str, minutes: int) -> str:
 
 def fmt_date(dt: date) -> str:
     return dt.strftime('%a, %d %b %Y')
-
-def fmt_time(dt: datetime) -> str:
-    return dt.strftime('%H:%M')
 
 def uid(n=6):
     chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -77,29 +69,17 @@ st.markdown(
     """
     <style>
       :root {
-        --bg-page: #f8fafc;
-        --bg-card: #ffffff;
-        --border: #e5e7eb;
-        --text: #111827;
-        --muted: #6b7280;
-        --accent: #111111;
-        --bar-free: #bbf7d0; /* emerald-200 */
-        --dot-booked: #60a5fa; /* blue-400 */
-        --radius: 12px;
-        --cell-h: 92px;
-        --bar-h: 6px;
+        --bg-page: #f8fafc; --bg-card: #ffffff; --border: #e5e7eb;
+        --text: #111827; --muted: #6b7280; --accent: #111111;
+        --bar-free: #bbf7d0; --dot-booked: #60a5fa;
+        --radius: 12px; --cell-h: 92px; --bar-h: 6px;
         --space-xs: 4px; --space-sm: 8px; --space-md: 12px;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg-page: #0a0c10;
-          --bg-card: #0b0f15;
-          --border: #1f2937;
-          --text: #e5e7eb;
-          --muted: #9ca3af;
-          --accent: #e5e7eb;
-          --bar-free: #065f46; /* darker green */
-          --dot-booked: #2563eb; /* blue-600 */
+          --bg-page: #0a0c10; --bg-card: #0b0f15; --border: #1f2937;
+          --text: #e5e7eb; --muted: #9ca3af; --accent: #e5e7eb;
+          --bar-free: #065f46; --dot-booked: #2563eb;
         }
       }
       body { background: var(--bg-page); }
@@ -108,7 +88,6 @@ st.markdown(
       .month-label { font-weight:600; font-size:13px; color:var(--text); opacity:.9; }
 
       /* Calendar cells */
-      .calendar-wrap { position: relative; }
       .calendar-btn button {
         width: 100%; height: var(--cell-h); border-radius: var(--radius) !important;
         background: var(--bg-card); border: 1px solid var(--border);
@@ -194,7 +173,7 @@ def booking_at(start_iso: str):
     return None
 
 # ----------------------------- Booking workflow -----------------------------
-@st.experimental_dialog('Confirm booking')
+@st.dialog('Confirm booking')
 def confirm_booking_dialog(slot_date: date, hour: int):
     start_iso = slot_iso(slot_date, hour)
     end_iso = add_minutes_iso(start_iso, SLOT_LENGTH_MIN)
@@ -322,7 +301,7 @@ for week in rows:
             is_today = (d == date.today())
             is_selected = (d == st.session_state.selected_date)
             pct = int(round(day_availability_ratio(d) * 100))
-            dots = min(day_bookings_count(d), 8)  # cap visible dots to 8
+            dots = min(day_bookings_count(d), 8)
 
             classes = 'calendar-btn'
             if is_selected:
@@ -330,13 +309,10 @@ for week in rows:
             st.markdown(f'<div class="{classes}">', unsafe_allow_html=True)
             clicked = st.button(f"{d.day}", key=f'daybtn-{to_date_str(d)}', use_container_width=True)
 
-            # Today chip (overlay)
             if is_today:
                 st.markdown('<div style="position:relative; top:-86px; display:flex; justify-content:flex-end; padding-right:8px;"><span class="chip">Today</span></div>', unsafe_allow_html=True)
-            # Dots row (overlay)
             if dots:
                 st.markdown('<div class="dots">' + ''.join(['<span class="dot"></span>' for _ in range(dots)]) + '</div>', unsafe_allow_html=True)
-            # Availability bar (underlay)
             st.markdown('<div class="avail-bar"><div class="avail-track"><div class="avail-fill" style="width:'+str(pct)+'%;"></div></div></div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -346,7 +322,7 @@ for week in rows:
                 st.session_state.slots_modal_open = True
 
 # ----------------------------- Slots dialog after date selection -----------------------------
-@st.experimental_dialog('Select a time')
+@st.dialog('Select a time')
 def slots_dialog():
     md = st.session_state.slots_modal_date
     st.write(f"**{fmt_date(md)}**")
@@ -420,7 +396,7 @@ if managed:
 st.divider()
 
 # ----------------------------- Trainer dialog (top-right) -----------------------------
-@st.experimental_dialog('Trainer')
+@st.dialog('Trainer')
 def trainer_dialog():
     if not st.session_state.trainer_mode:
         with st.form('pin_form'):
@@ -428,7 +404,7 @@ def trainer_dialog():
             if st.form_submit_button('Unlock'):
                 if pin == str(settings.get('trainerPin', '1234')):
                     st.session_state.trainer_mode = True
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error('Wrong PIN.')
     else:
@@ -449,7 +425,7 @@ def trainer_dialog():
             latest['settings']['trainerPin'] = new_pin[:8]
             save_storage(latest)
             st.session_state.flash = ('Settings saved', '💾')
-            st.experimental_rerun()
+            st.rerun()
 
         grid_cols = st.columns(3)
         for idx, hr in enumerate(hours):
@@ -475,7 +451,7 @@ def trainer_dialog():
                         latest['blocked'] = sorted(list(blk))
                         save_storage(latest)
                         st.session_state.flash = ('Slot updated', '🚧')
-                        st.experimental_rerun()
+                        st.rerun()
 
         # Export CSV for the day
         day_bookings = [b for b in bookings if from_date_str(b['startISO'][:10]) == sel_date]
@@ -500,7 +476,7 @@ def trainer_dialog():
             st.session_state.trainer_mode = False
             st.session_state.show_trainer_modal = False
             st.session_state.flash = ('Trainer locked', '🔒')
-            st.experimental_rerun()
+            st.rerun()
 
 if st.session_state.show_trainer_modal:
     trainer_dialog()
