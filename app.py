@@ -1,9 +1,9 @@
 # app.py
-# Trainer Booking — v0.1.3-alpha
-# - Fix: month nav arrows no longer open slot dialog
-# - Fix: Trainer dialog "Close" button (right-aligned)
-# - Fix: Weekday header aligned to grid columns
-# - Fix: No nested dialogs; time click -> schedule confirm outside slots dialog
+# Trainer Booking — v0.1.4-alpha
+# - Month nav & calendar are now driven by a dedicated calendar_cursor (1st of viewed month)
+# - Grid and header month label read from calendar_cursor (fixes incorrect month/sequence)
+# - Arrows clear open dialogs before navigating
+# - Non-nested dialog flow remains (time pick -> open confirm on next run)
 # - Keeps: st.dialog / st.rerun, hover/focus polish, privacy dots, thin bar
 
 import json
@@ -61,6 +61,12 @@ def uid(n=6):
     chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
     import secrets
     return ''.join(secrets.choice(chars) for _ in range(n))
+
+def add_months(dt: date, months: int) -> date:
+    """Return the first day of the month that is `months` from dt's month."""
+    y = dt.year + (dt.month - 1 + months) // 12
+    m = (dt.month - 1 + months) % 12 + 1
+    return date(y, m, 1)
 
 # ----------------------------- Page setup & CSS -----------------------------
 st.set_page_config(page_title='Trainer Booking', page_icon='🏋️', layout='wide')
@@ -122,6 +128,10 @@ st.markdown(
 # ----------------------------- Session State -----------------------------
 if 'selected_date' not in st.session_state:
     st.session_state.selected_date = date.today()
+# NEW: dedicated month cursor for the calendar view (always day=1)
+if 'calendar_cursor' not in st.session_state:
+    st.session_state.calendar_cursor = date.today().replace(day=1)
+
 if 'trainer_mode' not in st.session_state:
     st.session_state.trainer_mode = False
 if 'show_trainer_modal' not in st.session_state:
@@ -133,7 +143,7 @@ if 'slots_modal_date' not in st.session_state:
 if 'flash' not in st.session_state:
     st.session_state.flash = None  # (msg, icon)
 
-# NEW: for non-nested dialogs
+# for non-nested dialogs
 if 'open_confirm' not in st.session_state:
     st.session_state.open_confirm = False
 if 'pending_booking_date' not in st.session_state:
@@ -239,7 +249,6 @@ def slots_dialog():
             st.caption(cap)
             if st.button(label, disabled=disabled, key=f'sel-{s}'):
                 # Do not open confirm dialog inside this dialog!
-                # Set session flags, close this dialog, then rerun.
                 st.session_state.pending_booking_date = md
                 st.session_state.pending_booking_hour = hr
                 st.session_state.open_confirm = True
@@ -375,29 +384,25 @@ with header_left:
 
 with header_right:
     st.markdown('<div class="topbar-right">', unsafe_allow_html=True)
-    st.markdown(f'<span class="month-label">{st.session_state.selected_date.strftime("%b %Y")}</span>', unsafe_allow_html=True)
+    # Month label reflects calendar_cursor
+    st.markdown(f'<span class="month-label">{st.session_state.calendar_cursor.strftime("%b %Y")}</span>', unsafe_allow_html=True)
     nav_c1, nav_c2, nav_c3 = st.columns([1, 1, 2])
     with nav_c1:
         if st.button('‹', key='prev_month', help='Previous month', use_container_width=True):
-            # close any open dialogs before navigating
+            # Close any open dialogs before navigating
             st.session_state.slots_modal_open = False
             st.session_state.open_confirm = False
-            d = st.session_state.selected_date
-            prev_month = (d.replace(day=1) - timedelta(days=1)).replace(day=1)
-            st.session_state.selected_date = prev_month
+            st.session_state.calendar_cursor = add_months(st.session_state.calendar_cursor, -1)
     with nav_c2:
         if st.button('›', key='next_month', help='Next month', use_container_width=True):
             st.session_state.slots_modal_open = False
             st.session_state.open_confirm = False
-            d = st.session_state.selected_date
-            year = d.year + (1 if d.month == 12 else 0)
-            month = 1 if d.month == 12 else d.month + 1
-            st.session_state.selected_date = date(year, month, 1)
+            st.session_state.calendar_cursor = add_months(st.session_state.calendar_cursor, +1)
     with nav_c3:
         if st.button('Today', key='today_btn_small'):
             st.session_state.slots_modal_open = False
             st.session_state.open_confirm = False
-            st.session_state.selected_date = date.today().replace(day=1)
+            st.session_state.calendar_cursor = date.today().replace(day=1)
     if st.button('Trainer', key='trainer_btn'):
         st.session_state.show_trainer_modal = True
     st.markdown('</div>', unsafe_allow_html=True)
@@ -409,7 +414,7 @@ for i, label in enumerate(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]):
         st.markdown(f'<div class="weekday-label">{label}</div>', unsafe_allow_html=True)
 
 # ----------------------------- Month grid -----------------------------
-cursor = st.session_state.selected_date.replace(day=1)
+cursor = st.session_state.calendar_cursor  # <— use the dedicated cursor
 rows = month_matrix(cursor)
 
 for week in rows:
@@ -441,6 +446,8 @@ for week in rows:
                 st.session_state.selected_date = d
                 st.session_state.slots_modal_date = d
                 st.session_state.slots_modal_open = True
+                # Keep calendar in the same month (align cursor to that month)
+                st.session_state.calendar_cursor = d.replace(day=1)
 
 # ----------------------------- Launch dialogs (non-nested) -----------------------------
 if st.session_state.slots_modal_open:
