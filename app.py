@@ -1,10 +1,8 @@
 # app.py
-# Trainer Booking — v0.1.4-alpha
-# - Month nav & calendar are now driven by a dedicated calendar_cursor (1st of viewed month)
-# - Grid and header month label read from calendar_cursor (fixes incorrect month/sequence)
-# - Arrows clear open dialogs before navigating
-# - Non-nested dialog flow remains (time pick -> open confirm on next run)
-# - Keeps: st.dialog / st.rerun, hover/focus polish, privacy dots, thin bar
+# Trainer Booking — v0.1.6-alpha
+# - Full button capacity coloring: left = occupied (red), right = available (green)
+# - Uses a per-cell gradient overlay behind the button content
+# - Keeps: compact month picker, Trainer button alignment, non-nested dialogs, polish
 
 import json
 import os
@@ -80,12 +78,19 @@ st.markdown(
         --bar-free: #bbf7d0; --dot-booked: #60a5fa;
         --radius: 12px; --cell-h: 92px; --bar-h: 6px;
         --space-xs: 4px; --space-sm: 8px; --space-md: 12px;
+
+        /* New: capacity colors */
+        --cap-red: #ef4444;   /* red-500 */
+        --cap-green: #22c55e; /* green-500 */
       }
       @media (prefers-color-scheme: dark) {
         :root {
           --bg-page: #0a0c10; --bg-card: #0b0f15; --border: #1f2937;
           --text: #e5e7eb; --muted: #9ca3af; --accent: #e5e7eb;
           --bar-free: #065f46; --dot-booked: #2563eb;
+
+          --cap-red: #b91c1c;   /* red-700 */
+          --cap-green: #16a34a; /* green-600 */
         }
       }
       body { background: var(--bg-page); }
@@ -93,9 +98,13 @@ st.markdown(
       .topbar-right { display:flex; gap:6px; align-items:center; justify-content:flex-end; }
       .month-label { font-weight:600; font-size:13px; color:var(--text); opacity:.9; }
 
+      /* Calendar cell wrapper becomes positioning context */
+      .calendar-cell { position: relative; }
+
       .calendar-btn button {
         width: 100%; height: var(--cell-h); border-radius: var(--radius) !important;
-        background: var(--bg-card); border: 1px solid var(--border);
+        background: transparent; /* transparent so overlay colors show through */
+        border: 1px solid var(--border);
         text-align: left; padding: var(--space-sm);
         transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease, background-color 120ms ease;
       }
@@ -105,12 +114,16 @@ st.markdown(
       .calendar-selected button { box-shadow: 0 0 0 2px var(--accent) inset, 0 2px 8px rgba(0,0,0,.04); }
       .chip { font-size:10px; background: var(--accent); color:#fff; border-radius:6px; padding:2px 6px; }
 
-      .avail-bar { position: relative; top: calc(var(--space-sm) * -1); }
-      .avail-track { height: var(--bar-h); width: 100%; background: var(--border); border-radius: 0 0 var(--radius) var(--radius); overflow:hidden; }
-      .avail-fill { height: var(--bar-h); background: var(--bar-free); transition: width 220ms ease; }
+      /* Full-button capacity overlay (behind content, non-interactive) */
+      .capacity-overlay {
+        position: absolute; inset: 0; border-radius: var(--radius);
+        pointer-events: none; z-index: 0;
+      }
 
-      .dots { position: relative; top: -28px; padding-left: var(--space-sm); display:flex; gap:4px; }
+      /* Info dots and Today chip positioned above overlay */
+      .dots { position: absolute; bottom: 8px; left: 8px; display:flex; gap:4px; pointer-events:none; z-index: 1; }
       .dot { width:6px; height:6px; border-radius:9999px; background: var(--dot-booked); opacity:.95; }
+      .today-chip { position:absolute; top:6px; right:8px; z-index:1; }
 
       .weekday-label { font-size:12px; color: var(--muted); text-align:center; }
       .stButton>button {
@@ -128,7 +141,6 @@ st.markdown(
 # ----------------------------- Session State -----------------------------
 if 'selected_date' not in st.session_state:
     st.session_state.selected_date = date.today()
-# NEW: dedicated month cursor for the calendar view (always day=1)
 if 'calendar_cursor' not in st.session_state:
     st.session_state.calendar_cursor = date.today().replace(day=1)
 
@@ -143,13 +155,19 @@ if 'slots_modal_date' not in st.session_state:
 if 'flash' not in st.session_state:
     st.session_state.flash = None  # (msg, icon)
 
-# for non-nested dialogs
+# Non-nested dialog flow
 if 'open_confirm' not in st.session_state:
     st.session_state.open_confirm = False
 if 'pending_booking_date' not in st.session_state:
     st.session_state.pending_booking_date = None
 if 'pending_booking_hour' not in st.session_state:
     st.session_state.pending_booking_hour = None
+
+# Month picker state
+if 'show_month_picker' not in st.session_state:
+    st.session_state.show_month_picker = False
+if 'month_picker_year' not in st.session_state:
+    st.session_state.month_picker_year = date.today().year
 
 # One-shot toast renderer
 if st.session_state.flash:
@@ -170,7 +188,7 @@ start_hour = int(settings.get('dayStartHour', DEFAULT_DAY_START))
 end_hour = int(settings.get('dayEndHour', DEFAULT_DAY_END))
 hours = list(range(start_hour, end_hour + 1))
 
-# Helpers on current snapshot
+# ----------------------------- Helpers -----------------------------
 def is_blocked(start_iso: str) -> bool:
     return start_iso in blocked
 
@@ -182,6 +200,42 @@ def booking_at(start_iso: str):
         if b['startISO'] == start_iso:
             return b
     return None
+
+def month_matrix(cursor: date):
+    first = cursor.replace(day=1)
+    start_weekday = first.weekday()  # Mon=0..Sun=6
+    # Days in month
+    if first.month == 12:
+        first_next = date(first.year + 1, 1, 1)
+    else:
+        first_next = date(first.year, first.month + 1, 1)
+    days_in_month = (first_next - timedelta(days=1)).day
+
+    cells = [None] * start_weekday
+    cells += [first + timedelta(days=i) for i in range(days_in_month)]
+    while len(cells) % 7 != 0:
+        cells.append(None)
+    return [cells[i:i+7] for i in range(0, len(cells), 7)]
+
+def day_availability_stats(d: date):
+    total = len(hours)
+    taken = 0
+    blocked_count = 0
+    for hr in hours:
+        s = slot_iso(d, hr)
+        if is_booked(s):
+            taken += 1
+        elif is_blocked(s):
+            blocked_count += 1
+    free = max(0, total - taken - blocked_count)
+    return free, (taken + blocked_count), total
+
+def day_bookings_count(d: date) -> int:
+    cnt = 0
+    for hr in hours:
+        if is_booked(slot_iso(d, hr)):
+            cnt += 1
+    return cnt
 
 # ----------------------------- Dialogs -----------------------------
 @st.dialog('Confirm booking')
@@ -248,11 +302,37 @@ def slots_dialog():
             cap = 'Blocked' if blocked_flag else ('Booked' if booked else 'Available')
             st.caption(cap)
             if st.button(label, disabled=disabled, key=f'sel-{s}'):
-                # Do not open confirm dialog inside this dialog!
                 st.session_state.pending_booking_date = md
                 st.session_state.pending_booking_hour = hr
                 st.session_state.open_confirm = True
                 st.session_state.slots_modal_open = False
+                st.rerun()
+
+@st.dialog('Choose month')
+def month_picker_dialog():
+    st.markdown("#### Pick a month")
+    yc1, yc2, yc3 = st.columns([1,1,2])
+    with yc1:
+        if st.button('« Year'):
+            st.session_state.month_picker_year -= 1
+            st.rerun()
+    with yc2:
+        st.caption(f"{st.session_state.month_picker_year}")
+    with yc3:
+        if st.button('Year »'):
+            st.session_state.month_picker_year += 1
+            st.rerun()
+
+    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    grid = st.columns(3)
+    for i, mlabel in enumerate(months):
+        col = grid[i % 3]
+        with col:
+            if st.button(mlabel, key=f"mp-{mlabel}-{st.session_state.month_picker_year}"):
+                y = st.session_state.month_picker_year
+                m = i + 1
+                st.session_state.calendar_cursor = date(y, m, 1)
+                st.session_state.show_month_picker = False
                 st.rerun()
 
 @st.dialog('Trainer')
@@ -312,7 +392,6 @@ def trainer_dialog():
                         st.session_state.flash = ('Slot updated', '🚧')
                         st.rerun()
 
-        # Export CSV for the day
         day_bookings = [b for b in bookings if from_date_str(b['startISO'][:10]) == sel_date]
         rows = [["Date", "Start", "End", "Client", "Remark", "Code"]]
         for b in sorted(day_bookings, key=lambda x: x['startISO']):
@@ -331,7 +410,6 @@ def trainer_dialog():
         cw.writerows(rows)
         st.download_button('Export day CSV', data=csv_buf.getvalue(), file_name=f'{to_date_str(sel_date)}-schedule.csv', mime='text/csv')
 
-        # Right-aligned Close button
         close_cols = st.columns([1,1,1,1,2])
         with close_cols[-1]:
             if st.button('Close'):
@@ -340,43 +418,6 @@ def trainer_dialog():
                 st.session_state.flash = ('Trainer closed', '🔒')
                 st.rerun()
 
-# ----------------------------- Calendar helpers -----------------------------
-def month_matrix(cursor: date):
-    first = cursor.replace(day=1)
-    start_weekday = first.weekday()  # Mon=0..Sun=6
-    # Days in month
-    if first.month == 12:
-        first_next = date(first.year + 1, 1, 1)
-    else:
-        first_next = date(first.year, first.month + 1, 1)
-    days_in_month = (first_next - timedelta(days=1)).day
-
-    cells = [None] * start_weekday
-    cells += [first + timedelta(days=i) for i in range(days_in_month)]
-    while len(cells) % 7 != 0:
-        cells.append(None)
-    return [cells[i:i+7] for i in range(0, len(cells), 7)]
-
-def day_availability_ratio(d: date) -> float:
-    total = len(hours)
-    taken = 0
-    blocked_count = 0
-    for hr in hours:
-        s = slot_iso(d, hr)
-        if is_booked(s):
-            taken += 1
-        elif is_blocked(s):
-            blocked_count += 1
-    free = max(0, total - taken - blocked_count)
-    return (free / total) if total else 0.0
-
-def day_bookings_count(d: date) -> int:
-    cnt = 0
-    for hr in hours:
-        if is_booked(slot_iso(d, hr)):
-            cnt += 1
-    return cnt
-
 # ----------------------------- Header -----------------------------
 header_left, header_right = st.columns([6, 6])
 with header_left:
@@ -384,27 +425,25 @@ with header_left:
 
 with header_right:
     st.markdown('<div class="topbar-right">', unsafe_allow_html=True)
-    # Month label reflects calendar_cursor
-    st.markdown(f'<span class="month-label">{st.session_state.calendar_cursor.strftime("%b %Y")}</span>', unsafe_allow_html=True)
-    nav_c1, nav_c2, nav_c3 = st.columns([1, 1, 2])
-    with nav_c1:
-        if st.button('‹', key='prev_month', help='Previous month', use_container_width=True):
-            # Close any open dialogs before navigating
-            st.session_state.slots_modal_open = False
-            st.session_state.open_confirm = False
-            st.session_state.calendar_cursor = add_months(st.session_state.calendar_cursor, -1)
-    with nav_c2:
-        if st.button('›', key='next_month', help='Next month', use_container_width=True):
-            st.session_state.slots_modal_open = False
-            st.session_state.open_confirm = False
-            st.session_state.calendar_cursor = add_months(st.session_state.calendar_cursor, +1)
-    with nav_c3:
-        if st.button('Today', key='today_btn_small'):
-            st.session_state.slots_modal_open = False
-            st.session_state.open_confirm = False
-            st.session_state.calendar_cursor = date.today().replace(day=1)
+
+    # Month button (compact) — opens month picker
+    month_btn_label = st.session_state.calendar_cursor.strftime("%b %Y")
+    if st.button(month_btn_label, key='month_btn'):
+        st.session_state.slots_modal_open = False
+        st.session_state.open_confirm = False
+        st.session_state.month_picker_year = st.session_state.calendar_cursor.year
+        st.session_state.show_month_picker = True
+
+    # Today
+    if st.button('Today', key='today_btn_small'):
+        st.session_state.slots_modal_open = False
+        st.session_state.open_confirm = False
+        st.session_state.calendar_cursor = date.today().replace(day=1)
+
+    # Trainer (flush right of Today)
     if st.button('Trainer', key='trainer_btn'):
         st.session_state.show_trainer_modal = True
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 # Weekday header aligned to grid
@@ -414,7 +453,7 @@ for i, label in enumerate(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]):
         st.markdown(f'<div class="weekday-label">{label}</div>', unsafe_allow_html=True)
 
 # ----------------------------- Month grid -----------------------------
-cursor = st.session_state.calendar_cursor  # <— use the dedicated cursor
+cursor = st.session_state.calendar_cursor
 rows = month_matrix(cursor)
 
 for week in rows:
@@ -426,36 +465,50 @@ for week in rows:
                 continue
             is_today = (d == date.today())
             is_selected = (d == st.session_state.selected_date)
-            pct = int(round(day_availability_ratio(d) * 100))
+
+            free, occupied, total = day_availability_stats(d)
+            free_pct = int(round((free / total) * 100)) if total else 0
+            occ_pct = 100 - free_pct
             dots = min(day_bookings_count(d), 8)
 
             classes = 'calendar-btn'
             if is_selected:
                 classes += ' calendar-selected'
+
+            # Positioning context + content
+            st.markdown('<div class="calendar-cell">', unsafe_allow_html=True)
             st.markdown(f'<div class="{classes}">', unsafe_allow_html=True)
             clicked = st.button(f"{d.day}", key=f'daybtn-{to_date_str(d)}', use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
+            # Today chip and dots above overlay
             if is_today:
-                st.markdown('<div style="position:relative; top:-86px; display:flex; justify-content:flex-end; padding-right:8px;"><span class="chip">Today</span></div>', unsafe_allow_html=True)
+                st.markdown('<div class="today-chip"><span class="chip">Today</span></div>', unsafe_allow_html=True)
             if dots:
                 st.markdown('<div class="dots">' + ''.join(['<span class="dot"></span>' for _ in range(dots)]) + '</div>', unsafe_allow_html=True)
-            st.markdown('<div class="avail-bar"><div class="avail-track"><div class="avail-fill" style="width:'+str(pct)+'%;"></div></div></div>', unsafe_allow_html=True)
+
+            # FULL button capacity overlay (left red = occupied, right green = free)
+            st.markdown(
+                f'<div class="capacity-overlay" style="background: linear-gradient(90deg, var(--cap-red) 0% {occ_pct}%, var(--cap-green) {occ_pct}% 100%);"></div>',
+                unsafe_allow_html=True
+            )
             st.markdown('</div>', unsafe_allow_html=True)
 
             if clicked:
                 st.session_state.selected_date = d
                 st.session_state.slots_modal_date = d
                 st.session_state.slots_modal_open = True
-                # Keep calendar in the same month (align cursor to that month)
                 st.session_state.calendar_cursor = d.replace(day=1)
 
 # ----------------------------- Launch dialogs (non-nested) -----------------------------
 if st.session_state.slots_modal_open:
     slots_dialog()
 
-# If a time was picked, open confirm dialog now (outside other dialogs)
 if st.session_state.open_confirm and st.session_state.pending_booking_date is not None:
     confirm_booking_dialog(st.session_state.pending_booking_date, st.session_state.pending_booking_hour)
+
+if st.session_state.show_month_picker:
+    month_picker_dialog()
 
 st.divider()
 
