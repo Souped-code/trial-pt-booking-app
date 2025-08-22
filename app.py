@@ -1,11 +1,10 @@
 # app.py
-# Trainer Booking — v0.1.8-alpha
-# - Fix: single-dialog priority (Confirm > Slots > Month Picker > Trainer)
-# - Fix: Trainer button clears other dialog flags before opening
-# - Fix: Enter in Manage Booking uses a form and submit button
-# - Change: capacity coloring via two solid overlays (red=occupied, green=free) filling the whole button
-# - Change: header toolbar buttons sized and aligned (horizontal, flush right)
-# - Change: compact month picker header with arrows and centered year
+# Trainer Booking — v0.1.9-alpha
+# - Smaller UI scale: compact toolbar & tighter calendar cells
+# - Elegant bottom capacity bar (red=occupied, green=free) inside each date cell
+# - Header buttons side-by-side on one row, flush right
+# - Month picker header arrows + centered year, tighter spacing
+# - Single-dialog priority preserved; form-based manage booking
 
 import json
 import os
@@ -69,8 +68,8 @@ st.markdown(
       :root {
         --bg-page: #f8fafc; --bg-card: #ffffff; --border: #e5e7eb;
         --text: #111827; --muted: #6b7280; --accent: #111111;
-        --radius: 12px; --cell-h: 92px;
-        --space-xs: 4px; --space-sm: 8px; --space-md: 12px;
+        --radius: 12px; --cell-h: 76px;
+        --space-xs: 3px; --space-sm: 6px; --space-md: 10px;
 
         --cap-red: #ef4444;
         --cap-green: #22c55e;
@@ -85,59 +84,56 @@ st.markdown(
       }
       body { background: var(--bg-page); }
 
-      /* Header toolbar: right-aligned buttons */
-      .toolbar { display:flex; gap: 8px; align-items:center; justify-content:flex-end; }
-      .toolbar .stButton>button {
-        height: 36px; padding: 0 12px; min-width: 84px;
-        border-radius: 10px; border: 1px solid var(--border);
+      /* Toolbar: one row, right-aligned */
+      .toolbar-row { display:flex; gap:8px; align-items:center; justify-content:flex-end; }
+      .toolbar-row .stButton>button {
+        height: 32px; padding: 0 12px; min-width: 84px;
+        border: 1px solid var(--border); border-radius: 10px;
+        font-size: 13px;
       }
 
-      .month-label { font-weight:600; font-size:13px; color:var(--text); opacity:.9; }
-
-      /* Calendar cell container carries the colored background and exact height */
+      /* Calendar cells */
       .calendar-cell {
         position: relative; border-radius: var(--radius);
         height: var(--cell-h); overflow: hidden;
       }
-      /* Capacity overlays (under the button) */
-      .cap-red, .cap-green {
-        position: absolute; top:0; bottom:0; pointer-events:none;
-      }
-      .cap-red { left:0; background: var(--cap-red); }
-      .cap-green { background: var(--cap-green); }
-
       .calendar-btn button {
         width: 100%; height: 100%; border-radius: var(--radius) !important;
-        background: transparent;
+        background: var(--bg-card);
         border: 1px solid var(--border);
         text-align: left; padding: var(--space-sm);
         transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease, background-color 120ms ease;
         position: relative; z-index: 2;
+        font-size: 13px;
       }
-      .calendar-btn button:hover { border-color: var(--text); box-shadow: 0 4px 14px rgba(0,0,0,.06); transform: translateY(-1px); }
+      .calendar-btn button:hover { border-color: var(--text); box-shadow: 0 3px 10px rgba(0,0,0,.06); transform: translateY(-1px); }
       .calendar-btn button:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(0,0,0,.05); }
       .calendar-btn button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-      .calendar-selected button { box-shadow: 0 0 0 2px var(--accent) inset, 0 2px 8px rgba(0,0,0,.04); }
+      .calendar-selected button { box-shadow: 0 0 0 2px var(--accent) inset, 0 1px 6px rgba(0,0,0,.04); }
+
+      /* Capacity bottom bar */
+      .cap-bar {
+        position: absolute; left:0; right:0; bottom:0; height: 8px;
+        display:flex; border-radius: 0 0 var(--radius) var(--radius); overflow:hidden;
+        z-index: 1;
+      }
+      .cap-red { background: var(--cap-red); }
+      .cap-green { background: var(--cap-green); }
 
       .chip { font-size:10px; background: var(--accent); color:#fff; border-radius:6px; padding:2px 6px; }
       .today-chip { position:absolute; top:6px; right:8px; z-index:3; }
-      .dots { position: absolute; bottom: 8px; left: 8px; display:flex; gap:4px; pointer-events:none; z-index:3; }
-      .dot { width:6px; height:6px; border-radius:9999px; background: #60a5fa; opacity:.95; }
+      .dots { position: absolute; bottom: 16px; left: 8px; display:flex; gap:3px; pointer-events:none; z-index:3; }
+      .dot { width:5px; height:5px; border-radius:9999px; background: #60a5fa; opacity:.95; }
 
       .weekday-label { font-size:12px; color: var(--muted); text-align:center; }
-
-      /* General button polish */
-      .stButton>button {
-        transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
-      }
-      .stButton>button:hover { box-shadow: 0 4px 14px rgba(0,0,0,.06); transform: translateY(-1px); border-color: var(--text); }
+      .stButton>button { transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease; }
+      .stButton>button:hover { box-shadow: 0 3px 10px rgba(0,0,0,.06); transform: translateY(-1px); border-color: var(--text); }
       .stButton>button:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(0,0,0,.05); }
-      .stButton>button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-      /* Month picker header: arrows + centered year, tight spacing */
-      .year-wrap { display:flex; align-items:center; justify-content:center; gap:8px; }
-      .year-label { font-size:13px; color: var(--text); opacity:.85; margin: 0; }
-      .dialog-btn .stButton>button { height: 32px; padding: 0 10px; min-width: 0; }
+      /* Month picker header */
+      .year-wrap { display:flex; align-items:center; justify-content:center; gap:6px; }
+      .year-label { font-size:13px; color: var(--text); opacity:.85; margin:0; }
+      .dialog-btn .stButton>button { height: 28px; padding: 0 10px; min-width: 0; border-radius: 8px; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -149,7 +145,6 @@ if 'selected_date' not in st.session_state:
 if 'calendar_cursor' not in st.session_state:
     st.session_state.calendar_cursor = date.today().replace(day=1)
 
-# Dialog/flow flags
 for key, default in [
     ('trainer_mode', False),
     ('show_trainer_modal', False),
@@ -263,7 +258,6 @@ def confirm_booking_dialog(slot_date: date, hour: int):
         latest_bookings.append(booking)
         latest['bookings'] = latest_bookings
         save_storage(latest)
-        # clear pending flags
         st.session_state.slots_modal_open = False
         st.session_state.open_confirm = False
         st.session_state.pending_booking_date = None
@@ -300,21 +294,19 @@ def month_picker_dialog():
     # Compact header: arrow, centered year, arrow
     c1, c2, c3 = st.columns([1,2,1])
     with c1:
-        with st.container():  # tight
-            st.markdown('<div class="dialog-btn">', unsafe_allow_html=True)
-            if st.button('‹', key='year_prev'): 
-                st.session_state.month_picker_year -= 1
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="dialog-btn">', unsafe_allow_html=True)
+        if st.button('‹', key='year_prev'): 
+            st.session_state.month_picker_year -= 1
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
     with c2:
         st.markdown(f'<div class="year-wrap"><span class="year-label">{st.session_state.month_picker_year}</span></div>', unsafe_allow_html=True)
     with c3:
-        with st.container():
-            st.markdown('<div class="dialog-btn">', unsafe_allow_html=True)
-            if st.button('›', key='year_next'):
-                st.session_state.month_picker_year += 1
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="dialog-btn">', unsafe_allow_html=True)
+        if st.button('›', key='year_next'):
+            st.session_state.month_picker_year += 1
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
     grid = st.columns(3)
@@ -402,51 +394,43 @@ def trainer_dialog():
         cw.writerows(rows)
         st.download_button('Export day CSV', data=csv_buf.getvalue(), file_name=f'{to_date_str(sel_date)}-schedule.csv', mime='text/csv')
 
-        close_cols = st.columns([1,1,1,1,2])
-        with close_cols[-1]:
-            if st.button('Close'):
-                st.session_state.trainer_mode = False
-                st.session_state.show_trainer_modal = False
-                st.session_state.flash = ('Trainer closed', '🔒')
-                st.rerun()
+        if st.button('Close'):
+            st.session_state.trainer_mode = False
+            st.session_state.show_trainer_modal = False
+            st.session_state.flash = ('Trainer closed', '🔒')
+            st.rerun()
 
-# ----------------------------- Header (toolbar) -----------------------------
+# ----------------------------- Header (toolbar, one row) -----------------------------
 header_left, header_right = st.columns([6, 6])
 with header_left:
     st.markdown("## Trainer Booking")
 
 with header_right:
-    st.markdown('<div class="toolbar">', unsafe_allow_html=True)
-
-    # Month button
-    month_btn_label = st.session_state.calendar_cursor.strftime("%b %Y")
-    if st.button(month_btn_label, key='month_btn'):
-        # close other dialogs first
-        st.session_state.slots_modal_open = False
-        st.session_state.open_confirm = False
-        st.session_state.show_trainer_modal = False
-        st.session_state.trainer_mode = False
-        st.session_state.month_picker_year = st.session_state.calendar_cursor.year
-        st.session_state.show_month_picker = True
-
-    # Today button
-    if st.button('Today', key='today_btn_small'):
-        st.session_state.slots_modal_open = False
-        st.session_state.open_confirm = False
-        st.session_state.show_trainer_modal = False
-        st.session_state.trainer_mode = False
-        st.session_state.calendar_cursor = date.today().replace(day=1)
-
-    # Trainer button
-    if st.button('Trainer', key='trainer_btn'):
-        # close others, open trainer
-        st.session_state.slots_modal_open = False
-        st.session_state.open_confirm = False
-        st.session_state.show_month_picker = False
-        st.session_state.trainer_mode = False  # ensure PIN prompt if not set
-        st.session_state.show_trainer_modal = True
-
-    st.markdown('</div>', unsafe_allow_html=True)
+    # solid one-row toolbar, flush right
+    col_spacer, col_month, col_today, col_trainer = st.columns([8, 1, 1, 1])
+    with col_month:
+        month_btn_label = st.session_state.calendar_cursor.strftime("%b %Y")
+        if st.button(month_btn_label, key='month_btn', use_container_width=True):
+            st.session_state.slots_modal_open = False
+            st.session_state.open_confirm = False
+            st.session_state.show_trainer_modal = False
+            st.session_state.trainer_mode = False
+            st.session_state.month_picker_year = st.session_state.calendar_cursor.year
+            st.session_state.show_month_picker = True
+    with col_today:
+        if st.button('Today', key='today_btn_small', use_container_width=True):
+            st.session_state.slots_modal_open = False
+            st.session_state.open_confirm = False
+            st.session_state.show_trainer_modal = False
+            st.session_state.trainer_mode = False
+            st.session_state.calendar_cursor = date.today().replace(day=1)
+    with col_trainer:
+        if st.button('Trainer', key='trainer_btn', use_container_width=True):
+            st.session_state.slots_modal_open = False
+            st.session_state.open_confirm = False
+            st.session_state.show_month_picker = False
+            st.session_state.trainer_mode = False
+            st.session_state.show_trainer_modal = True
 
 # Weekday header aligned to grid
 weekday_cols = st.columns(7)
@@ -473,14 +457,14 @@ for week in rows:
             occ_pct = 100 - free_pct
             dots = min(day_bookings_count(d), 8)
 
-            # Colored background container
+            # Cell with bottom capacity bar
+            st.markdown('<div class="calendar-cell">', unsafe_allow_html=True)
+            # capacity bar
             st.markdown(
-                f'<div class="calendar-cell">'
-                f'  <div class="cap-red" style="width:{occ_pct}%; opacity:0.22;"></div>'
-                f'  <div class="cap-green" style="left:{occ_pct}%; width:{free_pct}%; opacity:0.22;"></div>',
+                f'<div class="cap-bar"><div class="cap-red" style="width:{occ_pct}%;"></div>'
+                f'<div class="cap-green" style="width:{free_pct}%;"></div></div>',
                 unsafe_allow_html=True
             )
-
             classes = 'calendar-btn'
             if is_selected: classes += ' calendar-selected'
             st.markdown(f'<div class="{classes}">', unsafe_allow_html=True)
