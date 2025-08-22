@@ -2,8 +2,8 @@
 # Streamlit version of the Trainer Booking app with a polished UI/UX.
 # - Date cell itself is clickable (no separate Select button)
 # - Compact month nav (chevrons + label) flush to top-right
-# - Slot picker opens as a modal after date selection
-# - Trainer view opens as a modal from a top-right button (PIN-gated)
+# - Slot picker opens as a dialog after date selection (experimental_dialog)
+# - Trainer view opens as a dialog from a top-right button (PIN-gated)
 # - Light/Dark design tokens + consistent spacing
 # - Custom thin availability bar
 # - Privacy-friendly dots in calendar to indicate bookings (no names shown)
@@ -230,6 +230,7 @@ def confirm_booking_dialog(slot_date: date, hour: int):
         latest_bookings.append(booking)
         latest['bookings'] = latest_bookings
         save_storage(latest)
+        st.session_state.slots_modal_open = False
         try:
             st.toast('Booked ✔', icon='✅')
         except Exception:
@@ -361,17 +362,9 @@ def slots_dialog():
             st.caption(cap)
             if st.button(label, disabled=disabled, key=f'sel-{s}'):
                 confirm_booking_dialog(md, hr)
-    st.divider()
-    if st.button('Close'):
-        st.session_state.slots_modal_open = False
-        st.experimental_rerun()
 
 if st.session_state.slots_modal_open:
     slots_dialog()
-
-st.divider()
-        if st.button('Close'):
-            st.session_state.slots_modal_open = False
 
 st.divider()
 
