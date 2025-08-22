@@ -344,23 +344,32 @@ for week in rows:
                 st.session_state.slots_modal_date = d
                 st.session_state.slots_modal_open = True
 
-# ----------------------------- Slots modal after date selection -----------------------------
-if st.session_state.slots_modal_open:
+# ----------------------------- Slots dialog after date selection -----------------------------
+@st.experimental_dialog('Select a time')
+def slots_dialog():
     md = st.session_state.slots_modal_date
-    with st.modal(f"Select a time — {fmt_date(md)}", key='slots_modal'):
-        slot_cols = st.columns(3)
-        for idx, hr in enumerate(hours):
-            s = slot_iso(md, hr)
-            booked = is_booked(s)
-            blocked_flag = is_blocked(s)
-            label = f"{hr:02d}:00"
-            with slot_cols[idx % 3]:
-                disabled = booked or blocked_flag
-                cap = 'Blocked' if blocked_flag else ('Booked' if booked else 'Available')
-                st.caption(cap)
-                if st.button(label, disabled=disabled, key=f'sel-{s}'):
-                    confirm_booking_dialog(md, hr)
-        st.divider()
+    st.write(f"**{fmt_date(md)}**")
+    slot_cols = st.columns(3)
+    for idx, hr in enumerate(hours):
+        s = slot_iso(md, hr)
+        booked = is_booked(s)
+        blocked_flag = is_blocked(s)
+        label = f"{hr:02d}:00"
+        with slot_cols[idx % 3]:
+            disabled = booked or blocked_flag
+            cap = 'Blocked' if blocked_flag else ('Booked' if booked else 'Available')
+            st.caption(cap)
+            if st.button(label, disabled=disabled, key=f'sel-{s}'):
+                confirm_booking_dialog(md, hr)
+    st.divider()
+    if st.button('Close'):
+        st.session_state.slots_modal_open = False
+        st.experimental_rerun()
+
+if st.session_state.slots_modal_open:
+    slots_dialog()
+
+st.divider()
         if st.button('Close'):
             st.session_state.slots_modal_open = False
 
@@ -417,88 +426,91 @@ if managed:
 
 st.divider()
 
-# ----------------------------- Trainer modal (top-right) -----------------------------
-if st.session_state.show_trainer_modal:
-    with st.modal('Trainer', key='trainer_modal'):
-        if not st.session_state.trainer_mode:
-            with st.form('pin_form'):
-                pin = st.text_input('Enter PIN', type='password')
-                if st.form_submit_button('Unlock'):
-                    if pin == str(settings.get('trainerPin', '1234')):
-                        st.session_state.trainer_mode = True
-                        st.experimental_rerun()
+# ----------------------------- Trainer dialog (top-right) -----------------------------
+@st.experimental_dialog('Trainer')
+def trainer_dialog():
+    if not st.session_state.trainer_mode:
+        with st.form('pin_form'):
+            pin = st.text_input('Enter PIN', type='password')
+            if st.form_submit_button('Unlock'):
+                if pin == str(settings.get('trainerPin', '1234')):
+                    st.session_state.trainer_mode = True
+                    st.experimental_rerun()
+                else:
+                    st.error('Wrong PIN.')
+    else:
+        sel_date = st.session_state.selected_date
+        st.write(f"Selected date: **{fmt_date(sel_date)}**")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            new_start = st.number_input('Start hour', min_value=0, max_value=23, value=start_hour)
+        with c2:
+            new_end = st.number_input('End hour', min_value=0, max_value=23, value=end_hour)
+        with c3:
+            new_pin = st.text_input('Trainer PIN', value=str(settings.get('trainerPin','1234')))
+        if st.button('Save settings'):
+            latest = load_storage()
+            latest.setdefault('settings', {})
+            latest['settings']['dayStartHour'] = int(new_start)
+            latest['settings']['dayEndHour'] = int(new_end)
+            latest['settings']['trainerPin'] = new_pin[:8]
+            save_storage(latest)
+            st.session_state.flash = ('Settings saved', '💾')
+            st.experimental_rerun()
+
+        grid_cols = st.columns(3)
+        for idx, hr in enumerate(hours):
+            s = slot_iso(sel_date, hr)
+            b = booking_at(s)
+            blocked_flag = is_blocked(s)
+            with grid_cols[idx % 3]:
+                box = st.container(border=True)
+                with box:
+                    st.write(f"**{hr:02d}:00**")
+                    if b:
+                        st.write(f"{b['name']}")
+                        if b.get('remark'):
+                            st.caption(b['remark'])
+                        st.code(b['code'])
                     else:
-                        st.error('Wrong PIN.')
-        else:
-            sel_date = st.session_state.selected_date
-            st.write(f"Selected date: **{fmt_date(sel_date)}**")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                new_start = st.number_input('Start hour', min_value=0, max_value=23, value=start_hour)
-            with c2:
-                new_end = st.number_input('End hour', min_value=0, max_value=23, value=end_hour)
-            with c3:
-                new_pin = st.text_input('Trainer PIN', value=str(settings.get('trainerPin','1234')))
-            if st.button('Save settings'):
-                latest = load_storage()
-                latest.setdefault('settings', {})
-                latest['settings']['dayStartHour'] = int(new_start)
-                latest['settings']['dayEndHour'] = int(new_end)
-                latest['settings']['trainerPin'] = new_pin[:8]
-                save_storage(latest)
-                st.session_state.flash = ('Settings saved', '💾')
-                st.rerun()
+                        st.caption('No booking')
+                    if st.button('Unblock' if blocked_flag else 'Block', key=f'blk-{s}'):
+                        latest = load_storage()
+                        blk = set(latest.get('blocked', []))
+                        if s in blk: blk.remove(s)
+                        else: blk.add(s)
+                        latest['blocked'] = sorted(list(blk))
+                        save_storage(latest)
+                        st.session_state.flash = ('Slot updated', '🚧')
+                        st.experimental_rerun()
 
-            grid_cols = st.columns(3)
-            for idx, hr in enumerate(hours):
-                s = slot_iso(sel_date, hr)
-                b = booking_at(s)
-                blocked_flag = is_blocked(s)
-                with grid_cols[idx % 3]:
-                    box = st.container(border=True)
-                    with box:
-                        st.write(f"**{hr:02d}:00**")
-                        if b:
-                            st.write(f"{b['name']}")
-                            if b.get('remark'):
-                                st.caption(b['remark'])
-                            st.code(b['code'])
-                        else:
-                            st.caption('No booking')
-                        if st.button('Unblock' if blocked_flag else 'Block', key=f'blk-{s}'):
-                            latest = load_storage()
-                            blk = set(latest.get('blocked', []))
-                            if s in blk: blk.remove(s)
-                            else: blk.add(s)
-                            latest['blocked'] = sorted(list(blk))
-                            save_storage(latest)
-                            st.session_state.flash = ('Slot updated', '🚧')
-                            st.rerun()
+        # Export CSV for the day
+        day_bookings = [b for b in bookings if from_date_str(b['startISO'][:10]) == sel_date]
+        rows = [["Date", "Start", "End", "Client", "Remark", "Code"]]
+        for b in sorted(day_bookings, key=lambda x: x['startISO']):
+            dt = datetime.fromisoformat(b['startISO'])
+            rows.append([
+                dt.strftime('%Y-%m-%d'),
+                dt.strftime('%H:%M'),
+                datetime.fromisoformat(b['endISO']).strftime('%H:%M'),
+                b['name'],
+                b.get('remark',''),
+                b['code'],
+            ])
+        csv_buf = io.StringIO()
+        import csv as _csv
+        cw = _csv.writer(csv_buf)
+        cw.writerows(rows)
+        st.download_button('Export day CSV', data=csv_buf.getvalue(), file_name=f'{to_date_str(sel_date)}-schedule.csv', mime='text/csv')
 
-            # Export CSV for the day
-            day_bookings = [b for b in bookings if from_date_str(b['startISO'][:10]) == sel_date]
-            rows = [["Date", "Start", "End", "Client", "Remark", "Code"]]
-            for b in sorted(day_bookings, key=lambda x: x['startISO']):
-                dt = datetime.fromisoformat(b['startISO'])
-                rows.append([
-                    dt.strftime('%Y-%m-%d'),
-                    dt.strftime('%H:%M'),
-                    datetime.fromisoformat(b['endISO']).strftime('%H:%M'),
-                    b['name'],
-                    b.get('remark',''),
-                    b['code'],
-                ])
-            csv_buf = io.StringIO()
-            import csv as _csv
-            cw = _csv.writer(csv_buf)
-            cw.writerows(rows)
-            st.download_button('Export day CSV', data=csv_buf.getvalue(), file_name=f'{to_date_str(sel_date)}-schedule.csv', mime='text/csv')
+        if st.button('Lock'):
+            st.session_state.trainer_mode = False
+            st.session_state.show_trainer_modal = False
+            st.session_state.flash = ('Trainer locked', '🔒')
+            st.experimental_rerun()
 
-            if st.button('Lock'):
-                st.session_state.trainer_mode = False
-                st.session_state.show_trainer_modal = False
-                st.session_state.flash = ('Trainer locked', '🔒')
-                st.rerun()
+if st.session_state.show_trainer_modal:
+    trainer_dialog()
 
 # Footer
 st.caption('Timezone: Asia/Singapore · Data stored in storage.json (server-local). For persistence across restarts, use a database.')
