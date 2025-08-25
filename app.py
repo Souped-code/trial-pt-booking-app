@@ -1,10 +1,9 @@
 # app.py
-# Trainer Booking — v0.1.10-alpha
-# Responsive UI overhaul:
-# - clamp() for sizes (cells, fonts, paddings)
-# - toolbar flex with wrap; right-aligned, compact on small screens
-# - bottom capacity bar uses clamp() height; two-tone split
-# - preserved single-dialog priority & booking form submit behavior
+# Trainer Booking — v0.1.11-alpha
+# - Narrower page, doubled side borders via inset shadows
+# - Toolbar (Month • Today • Trainer) horizontal and flush to the top-right
+# - Capacity bar flipped: green (available) from left, red (occupied) fills from right
+# - Retains responsive scaling, single-dialog priority, and form submit behavior
 
 import json
 import os
@@ -66,7 +65,7 @@ st.markdown(
     """
     <style>
       :root {
-        --bg-page: #f8fafc; --bg-card: #ffffff; --border: #e5e7eb;
+        --bg-page: #f5f7fb; --bg-card: #ffffff; --border: #e5e7eb; --border-strong: #cbd5e1;
         --text: #111827; --muted: #6b7280; --accent: #111111;
         --radius: 12px;
 
@@ -81,29 +80,43 @@ st.markdown(
         --space-xs: clamp(2px, 0.5vw, 4px);
         --space-sm: clamp(6px, 1.2vw, 10px);
 
-        --cap-red: #ef4444;
-        --cap-green: #22c55e;
+        --cap-red: #ef4444;   /* occupied */
+        --cap-green: #22c55e; /* available */
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg-page: #0a0c10; --bg-card: #0b0f15; --border: #1f2937;
+          --bg-page: #0a0c10; --bg-card: #0b0f15; --border: #1f2937; --border-strong: #273244;
           --text: #e5e7eb; --muted: #9ca3af; --accent: #e5e7eb;
           --cap-red: #b91c1c;
           --cap-green: #16a34a;
         }
       }
-      body { background: var(--bg-page); }
 
-      /* Toolbar: right aligned, can wrap gracefully */
+      /* Narrower page + doubled side borders using inset shadows */
+      .block-container {
+        max-width: clamp(780px, 74vw, 980px);
+        padding-top: 10px;
+        box-shadow:
+          inset 4px 0 0 var(--border-strong),
+          inset -4px 0 0 var(--border-strong);
+        border-radius: 10px;
+        background: var(--bg-page);
+      }
+
+      /* Reduce top spacing so toolbar sits flush to top */
+      h2 { margin-top: 2px; margin-bottom: 8px; }
+
+      /* Toolbar: one row, right-aligned (sticks to top) */
       .toolbar-row {
-        display:flex; flex-wrap: wrap; gap: 8px;
-        align-items:center; justify-content:flex-end;
+        display:flex; flex-wrap: nowrap; gap: 8px;
+        align-items:flex-start; justify-content:flex-end;
+        margin-top: 0;
       }
       .toolbar-row .stButton>button {
         height: var(--btn-h); padding: 0 clamp(10px, 1.2vw, 14px);
-        min-width: clamp(70px, 9vw, 110px);
+        min-width: clamp(80px, 10vw, 120px);
         border: 1px solid var(--border); border-radius: 10px;
-        font-size: var(--btn-font);
+        font-size: var(--btn-font); background: var(--bg-card);
       }
 
       /* Calendar cells */
@@ -125,14 +138,14 @@ st.markdown(
       .calendar-btn button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       .calendar-selected button { box-shadow: 0 0 0 2px var(--accent) inset, 0 1px 6px rgba(0,0,0,.04); }
 
-      /* Capacity bottom bar (two-tone) */
+      /* Capacity bottom bar (two-tone) — GREEN LEFT, RED RIGHT */
       .cap-bar {
         position: absolute; left:0; right:0; bottom:0; height: var(--cap-h);
         display:flex; border-radius: 0 0 var(--radius) var(--radius); overflow:hidden;
         z-index: 1;
       }
-      .cap-red { background: var(--cap-red); }
       .cap-green { background: var(--cap-green); }
+      .cap-red   { background: var(--cap-red); }
 
       .chip { font-size: clamp(9px, 1vw, 10px); background: var(--accent); color:#fff; border-radius:6px; padding:2px 6px; }
       .today-chip { position:absolute; top:6px; right:8px; z-index:3; }
@@ -416,13 +429,13 @@ def trainer_dialog():
             st.session_state.flash = ('Trainer closed', '🔒')
             st.rerun()
 
-# ----------------------------- Header (responsive toolbar) -----------------------------
-header_left, header_right = st.columns([6, 6])
-with header_left:
+# ----------------------------- Header (title + top-right toolbar) -----------------------------
+title_col, toolbar_col = st.columns([7, 5])
+with title_col:
     st.markdown("## Trainer Booking")
 
-with header_right:
-    # Single toolbar container; right-aligned & wraps if absolutely necessary
+with toolbar_col:
+    # Single toolbar container; right-aligned, no wrap (three buttons side-by-side)
     st.markdown('<div class="toolbar-row">', unsafe_allow_html=True)
 
     # Month button
@@ -479,10 +492,12 @@ for week in rows:
             dots = min(day_bookings_count(d), 8)
 
             st.markdown('<div class="calendar-cell">', unsafe_allow_html=True)
-            # capacity bar at bottom
+            # capacity bar (GREEN left, RED right)
             st.markdown(
-                f'<div class="cap-bar"><div class="cap-red" style="width:{occ_pct}%;"></div>'
-                f'<div class="cap-green" style="width:{free_pct}%;"></div></div>',
+                f'<div class="cap-bar">'
+                f'  <div class="cap-green" style="width:{free_pct}%;"></div>'
+                f'  <div class="cap-red"   style="width:{occ_pct}%;"></div>'
+                f'</div>',
                 unsafe_allow_html=True
             )
             classes = 'calendar-btn'
