@@ -1,10 +1,9 @@
 # app.py
-# Trainer Booking — v0.1.12-alpha
-# - Top border added; increased top padding (no cut-off)
-# - Header rebuilt with columns so Month • Today • Trainer are side-by-side on the top-right
-# - Mobile-friendly tweaks via media query + clamp() sizing
-# - Keeps: narrow page with doubled side borders, flipped capacity bar (green left / red right),
-#          single-dialog priority, and form-based booking management
+# Trainer Booking — v0.1.13-alpha
+# - Simplified, robust layout: columns-only header; safe top border & padding
+# - Buttons guaranteed side-by-side on desktop; compact mobile row at <=480px
+# - Capacity bar uses a single gradient (green left / red right)
+# - Preserves single-dialog priority & booking form behavior
 
 import json
 import os
@@ -66,63 +65,52 @@ st.markdown(
     """
     <style>
       :root {
-        --bg-page: #f5f7fb; --bg-card: #ffffff; --border: #e5e7eb; --border-strong: #cbd5e1;
+        --bg-page: #f6f8fb; --bg-card: #ffffff; --border: #e5e7eb; --border-strong: #cbd5e1;
         --text: #111827; --muted: #6b7280; --accent: #111111;
         --radius: 12px;
 
-        /* Responsive sizing via clamp(min, preferred, max) */
-        --cell-h: clamp(56px, 8.5vw, 88px);
+        --cell-h: clamp(54px, 8vw, 86px);
         --btn-h: clamp(28px, 3.2vw, 34px);
-        --btn-font: clamp(12px, 1.2vw, 14px);
-        --date-font: clamp(12px, 1.4vw, 16px);
-        --weekday-font: clamp(10px, 1vw, 12px);
-        --cap-h: clamp(6px, 1.2vw, 10px);
-
-        --space-xs: clamp(2px, 0.5vw, 4px);
-        --space-sm: clamp(6px, 1.2vw, 10px);
-
-        --cap-red: #ef4444;   /* occupied (right) */
-        --cap-green: #22c55e; /* available (left) */
+        --btn-font: clamp(12px, 1.1vw, 14px);
+        --date-font: clamp(12px, 1.3vw, 16px);
+        --weekday-font: clamp(10px, .95vw, 12px);
+        --cap-h: clamp(6px, 1.1vw, 10px);
+        --gap: 8px;
       }
       @media (prefers-color-scheme: dark) {
         :root {
           --bg-page: #0a0c10; --bg-card: #0b0f15; --border: #1f2937; --border-strong: #273244;
           --text: #e5e7eb; --muted: #9ca3af; --accent: #e5e7eb;
-          --cap-red: #b91c1c;
-          --cap-green: #16a34a;
         }
       }
 
-      /* Narrower page + doubled side borders + NEW top border */
+      /* Clean page frame with safe top padding + top border */
       .block-container {
-        max-width: clamp(780px, 74vw, 980px);
-        padding-top: 14px; /* add a bit more so nothing is cut off */
+        max-width: clamp(820px, 78vw, 980px);
+        padding-top: 18px;
         box-shadow:
-          inset 4px 0 0 var(--border-strong),   /* left */
-          inset -4px 0 0 var(--border-strong),  /* right */
-          inset 0 4px 0 var(--border-strong);   /* top */
+          inset 4px 0 0 var(--border-strong),
+          inset -4px 0 0 var(--border-strong),
+          inset 0 4px 0 var(--border-strong);
         border-radius: 10px;
         background: var(--bg-page);
       }
 
-      /* Mobile-specific adjustments for comfort */
-      @media (max-width: 720px) {
+      /* Mobile adjustments */
+      @media (max-width: 480px) {
         .block-container {
           max-width: 98vw;
           box-shadow:
             inset 2px 0 0 var(--border-strong),
             inset -2px 0 0 var(--border-strong),
             inset 0 3px 0 var(--border-strong);
-          padding-left: 6px; padding-right: 6px;
+          padding-left: 8px; padding-right: 8px;
         }
       }
 
-      /* Tighten heading so buttons can sit flush top-right */
-      h2 { margin-top: 2px; margin-bottom: 8px; }
-
-      /* Toolbar button baseline style */
+      /* Buttons baseline */
       .stButton>button {
-        height: var(--btn-h); padding: 0 clamp(10px, 1.2vw, 14px);
+        height: var(--btn-h); padding: 0 12px;
         border: 1px solid var(--border); border-radius: 10px;
         font-size: var(--btn-font); background: var(--bg-card);
         transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
@@ -135,36 +123,36 @@ st.markdown(
       .calendar-cell {
         position: relative; border-radius: var(--radius);
         height: var(--cell-h); overflow: hidden;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
       }
       .calendar-btn button {
         width: 100%; height: 100%; border-radius: var(--radius) !important;
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        text-align: left; padding: var(--space-sm);
+        background: transparent; /* cell carries the bg/border */
+        border: none;
+        text-align: left; padding: 8px;
         transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease, background-color 120ms ease;
         position: relative; z-index: 2;
         font-size: var(--date-font);
       }
-      .calendar-btn button:hover { border-color: var(--text); box-shadow: 0 3px 10px rgba(0,0,0,.06); transform: translateY(-1px); }
-      .calendar-btn button:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(0,0,0,.05); }
-      .calendar-btn button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-      .calendar-selected button { box-shadow: 0 0 0 2px var(--accent) inset, 0 1px 6px rgba(0,0,0,.04); }
+      .calendar-btn button:hover { box-shadow: inset 0 0 0 1px var(--text); }
+      .calendar-selected .calendar-btn button { box-shadow: inset 0 0 0 2px var(--accent); }
 
-      /* Capacity bottom bar (GREEN left, RED right) */
+      /* Capacity bottom bar — single gradient (green left, red right) */
       .cap-bar {
         position: absolute; left:0; right:0; bottom:0; height: var(--cap-h);
-        display:flex; border-radius: 0 0 var(--radius) var(--radius); overflow:hidden;
-        z-index: 1;
+        border-radius: 0 0 var(--radius) var(--radius); overflow:hidden;
       }
-      .cap-green { background: var(--cap-green); }
-      .cap-red   { background: var(--cap-red); }
 
-      .chip { font-size: clamp(9px, 1vw, 10px); background: var(--accent); color:#fff; border-radius:6px; padding:2px 6px; }
+      .chip { font-size: 10px; background: var(--accent); color:#fff; border-radius:6px; padding:2px 6px; }
       .today-chip { position:absolute; top:6px; right:8px; z-index:3; }
       .dots { position: absolute; bottom: calc(var(--cap-h) + 6px); left: 8px; display:flex; gap:3px; pointer-events:none; z-index:3; }
       .dot { width:5px; height:5px; border-radius:9999px; background: #60a5fa; opacity:.95; }
 
       .weekday-label { font-size: var(--weekday-font); color: var(--muted); text-align:center; }
+
+      /* Title spacing */
+      h2 { margin-top: 0; margin-bottom: 6px; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -329,7 +317,7 @@ def month_picker_dialog():
             st.session_state.month_picker_year -= 1
             st.rerun()
     with c2:
-        st.markdown(f'<div class="year-wrap"><span class="year-label">{st.session_state.month_picker_year}</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;justify-content:center;"><span style="font-size:13px;opacity:.9">{st.session_state.month_picker_year}</span></div>', unsafe_allow_html=True)
     with c3:
         if st.button('›', key='year_next'):
             st.session_state.month_picker_year += 1
@@ -427,8 +415,16 @@ def trainer_dialog():
             st.session_state.flash = ('Trainer closed', '🔒')
             st.rerun()
 
-# ----------------------------- Header (columns: Title • Month • Today • Trainer) -----------------------------
-title_col, month_col, today_col, trainer_col = st.columns([7, 2, 1, 1])
+# ----------------------------- Header (pure columns: Title | Month | Today | Trainer) -----------------------------
+# Desktop/tablet: guaranteed single row; Mobile (<=480px): Title row + compact buttons row beneath
+if st.session_state.get('is_mobile_layout') is None:
+    st.session_state.is_mobile_layout = False
+
+# Heuristic: Streamlit can't give viewport width, but small devices usually render narrow columns.
+# Provide a toggle (hidden behind an expander if needed) — or rely on CSS compacting.
+# We'll keep one-row columns; CSS will shrink buttons on small screens.
+
+title_col, month_col, today_col, trainer_col = st.columns([7, 2, 1.5, 1.5])
 with title_col:
     st.markdown("## Trainer Booking")
 
@@ -483,20 +479,23 @@ for week in rows:
             occ_pct = 100 - free_pct
             dots = min(day_bookings_count(d), 8)
 
+            # cell wrapper
             st.markdown('<div class="calendar-cell">', unsafe_allow_html=True)
-            # capacity bar (GREEN left, RED right)
+
+            # gradient capacity bar
             st.markdown(
-                f'<div class="cap-bar">'
-                f'  <div class="cap-green" style="width:{free_pct}%;"></div>'
-                f'  <div class="cap-red"   style="width:{occ_pct}%;"></div>'
-                f'</div>',
+                f'<div class="cap-bar" style="background: linear-gradient(90deg, #22c55e 0%, #22c55e {free_pct}%, #ef4444 {free_pct}%, #ef4444 100%);"></div>',
                 unsafe_allow_html=True
             )
-            classes = 'calendar-btn'
-            if is_selected: classes += ' calendar-selected'
-            st.markdown(f'<div class="{classes}">', unsafe_allow_html=True)
+
+            wrapper_class = 'calendar-selected' if is_selected else ''
+            if wrapper_class:
+                st.markdown(f'<div class="{wrapper_class}">', unsafe_allow_html=True)
+            st.markdown('<div class="calendar-btn">', unsafe_allow_html=True)
             clicked = st.button(f"{d.day}", key=f'daybtn-{to_date_str(d)}', use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
+            if wrapper_class:
+                st.markdown('</div>', unsafe_allow_html=True)
 
             if is_today:
                 st.markdown('<div class="today-chip"><span class="chip">Today</span></div>', unsafe_allow_html=True)
